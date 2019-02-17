@@ -1,0 +1,3241 @@
+---
+title: "Test Aims"
+author: "Lucy King"
+date: "9/28/2018"
+output: 
+  html_notebook:
+    toc: true
+    toc_float: true
+---
+
+
+```{r}
+#Libraries
+library(tidyverse)
+library(readxl)
+
+#Parameters
+dti_file_path <- "~/Desktop/BABIES/r01_winter_2019/data/dti_text_files/"
+
+rsfmri_6mo_file <- "~/Desktop/BABIES/r01_winter_2019/data/clusters_extracted_betas.xlsx"
+
+age_scan_file <- "~/Desktop/BABIES/r01_winter_2019/data/age_scan.csv"
+
+dti_files_df <-
+  tibble(
+    path = 
+      list.files(
+        path = dti_file_path,
+        pattern = "\\d{3,}-\\w{1}-T\\d{1}_all_average.txt$",
+        full.names = TRUE
+      )
+  )
+
+
+
+```
+
+
+
+#DTI
+
+Summary of findings:
+
+1. Associations with hair cortisol and stress
+
+- Overall, the fornix is implicated in every analysis relating stress or cortisol to infant DTI: HCC in second trimester is negatively associated with fornix FA at newborn, preconception stress severity is negatively associated with fornix FA at newborn, preconception stress severity in negatively associated with fornix FA at age 6 months, postnatal stress is negatively associated with fornix FA at 6 months. 
+
+- The UF is also implicated, although somewhat less consistently: HCC in second trimester is slightly negatively associated with UF FA at newborn, preconception stress severity is not associated with UF FA at newborn, preconception stress severity ix negatively associated with UF FA at age 6 months, postnatal stress in negatively associated with UF FA at 6 months. 
+
+- The thalamic radiation extending into the temporal lobe is consistently associated across analyses: HCC in second trimester is negatively associated with FA at newborn, preconception stress severity is negatively associated with FA at newborn, preconception stress severity in negatively associated with FA at age 6 months, postnatal stress is negatively associated with FA at 6 months. 
+
+2. Associations with maternal sensitivity and touch
+
+Still working on these but initially appear hard to interpret in light of stress associations (e.g., sensitivity is associated with decreased FA in some of the tracts). Greater maternal touch during the SFP appears weakly associated with greater FA in the fornix. Need to complete coding for those with DTI. Ideas for how to create one variable for "sensitive maternal touch"? These analyses may need to additionally account for infant affect during the SFP.
+
+## Read in correct age at scan data
+```{r}
+age_scan <-
+  read_csv(age_scan_file)
+```
+
+## Read in DTI data
+```{r warning=FALSE}
+dti <-
+  dti_files_df %>%
+  mutate(
+    data = map(path, read_tsv, col_names = FALSE)
+  ) %>% 
+  unnest(data) %>% 
+  mutate(
+    file_name = str_extract(path, "\\d{3,}-\\w{1}-T\\d{1}_all_average.txt$")
+  ) %>% 
+  separate(file_name, sep = "-", into = c("ID", "project", "timepoint")) %>% 
+  mutate(
+    ID = as.integer(ID),
+    timepoint = str_replace(timepoint, "_all_average.txt", ""),
+    timepoint = case_when(
+      project == "C" ~ "six_months",
+      project == "L" & timepoint == "T2" ~ "newborn",
+      project == "L" & timepoint == "T3" ~ "six_months"
+    )
+  ) %>% 
+  select(
+    ID,
+    project,
+    timepoint,
+    FA = X1,
+    MD = X2,
+    RD = X3,
+    AD = X4
+  ) %>% 
+  group_by(ID, timepoint) %>% 
+  mutate(
+    metric = 1:n(),
+    metric = recode(
+      metric,
+      "1" = "cc_body",
+      "2" = "cc_frontal",
+      "3" = "cc_full",
+      "4" = "cc_genu",
+      "5" = "cc_occipital",
+      "6" = "cc_parietal",
+      "7" = "cc_splenium",
+      "8" = "cgc_l",
+      "9" = "cgc_r",
+      "10" = "cgh_l",
+      "11" = "cgh_r",
+      "12" = "cst_l",
+      "13" = "cst_r",
+      "14" = "fornix",
+      "15" = "ifo_l",
+      "16" = "ifo_r",
+      "17" = "ilf_l",
+      "18" = "ilf_r",
+      "19" = "slf_fp_l",
+      "20" = "slf_fp_r",
+      "21" = "slf_ft_l",
+      "22" = "slf_ft_l",
+      "23" = "slf_pt_l",
+      "24" = "slf_pt_r",
+      "25" = "thal_f_l",
+      "26" = "thal_f_r",
+      "27" = "thal_o_l",
+      "28" = "thal_o_r",
+      "29" = "thal_p_l",
+      "30" = "thal_p_r",
+      "31" = "thal_t_l",
+      "32" = "thal_t_r",
+      "33" = "unc_l",
+      "34" = "unc_r"
+    )
+  ) %>% 
+  gather(variable, value, c(FA:AD)) %>%
+  unite(temp, metric, variable) %>% 
+  group_by_at(vars(-value)) %>% # group by everything other than the value column.
+  mutate(row_id = 1:n()) %>%
+  ungroup() %>% # build group index
+  spread(temp, value) %>% 
+  filter(row_id == 1) %>% 
+  select(-row_id)  # drop the index
+
+
+dti %>% 
+  count(project, timepoint)
+```
+
+```{r}
+dti <-
+  dti %>% 
+  left_join(age_scan, by = "ID") %>% 
+  left_join(lena_5min_cl_wf, by = "ID") %>% 
+  left_join(sfp_care_wf, by = "ID") %>% 
+  left_join(hc_wf, by = "ID") %>% 
+  left_join(lscr_T1lg_6mocs, by = "ID") %>% 
+  left_join(crisys_wf, by = "ID") %>% 
+  left_join(q18month_symp, by = "ID")
+
+dti_newborn <-
+  dti %>% 
+  filter(timepoint == "newborn")
+
+dti_6mo <-
+  dti %>% 
+  filter(unc_l_FA < .7) %>% 
+  filter(timepoint == "six_months")
+```
+
+## Residualize DTI measures of interest with corrected age
+```{r}
+unc_l_age <- lm(unc_l_FA ~ age_nb_corrected + male, data = dti_newborn)
+unc_r_age <- lm(unc_r_FA ~ age_nb_corrected + male, data = dti_newborn)
+fornix_age <- lm(fornix_FA ~ age_nb_corrected + male, data = dti_newborn)
+cgh_l_age <- lm(cgh_l_FA ~ age_nb_corrected + male, data = dti_newborn)
+cgh_r_age <- lm(cgh_r_FA ~ age_nb_corrected + male, data = dti_newborn)
+
+
+dti_newborn <-
+  dti_newborn %>% 
+  mutate(
+    unc_l_resid = resid(unc_l_age),
+    unc_r_resid = resid(unc_r_age),
+    fornix_resid = resid(fornix_age),
+    cgh_l_resid = resid(cgh_l_age),
+    cgh_r_resid = resid(cgh_r_age)
+  )
+```
+
+## Newborn DTI ~ mean HCC
+```{r}
+dti_newborn %>% 
+  ggplot(aes(hcc_overall_mean, unc_l_resid)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(-.5, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .24, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: log HCC (pg/ml)",
+    y = "Newborn left uncinate FA"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/NBuf_HCC.png", width = 8, height = 7)
+cor.test(dti_newborn$hcc_overall_mean, dti_newborn$unc_l_resid)
+```
+
+```{r}
+dti_newborn %>% 
+  ggplot(aes(hcc_overall_mean, fornix_resid)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(-.5, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .24, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: log HCC (pg/ml)",
+    y = "Newborn fornix"
+  )
+```
+
+
+```{r}
+dti_newborn %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "Newborn Uncinate Fasciculus ~ HCC")
+
+dti_newborn %>% 
+  gather(cc, value, cc_full_AD:cc_full_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cc, scales = "free") +
+  labs(title = "Newborn Corpus Callosum Full ~ HCC")
+
+dti_newborn %>% 
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "Newborn Cingulum ~ HCC")
+
+dti_newborn %>% 
+  gather(cgh, value, cgh_l_AD:cgh_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgh, scales = "free") +
+  labs(title = "Newborn Hippocampal Cingulum ~ HCC")
+
+dti_newborn %>% 
+  gather(cst, value, cst_l_AD:cst_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cst, scales = "free") +
+  labs(title = "Newborn Corticospinal Tract ~ HCC")
+
+dti_newborn %>% 
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "Newborn Fornix ~ HCC")
+
+dti_newborn %>% 
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "Newborn Inferior Fronto-Occipital Fasciculus ~ HCC")
+
+dti_newborn %>% 
+  gather(ilf, value,  ilf_l_AD:ilf_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ilf, scales = "free") +
+  labs(title = "Newborn Inferior Longitudinal Fasciculus ~ HCC")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_fp_l_AD:slf_fp_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Fronto-Parietal ~ HCC")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_ft_l_AD:slf_ft_l_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Fronto-Temporal ~ HCC")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_pt_l_AD:slf_pt_l_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Parietal-Temporal ~ HCC")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_f_l_AD:thal_f_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Frontal ~ HCC")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_o_l_AD:thal_o_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Occipatal ~ HCC")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_p_l_AD:thal_p_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Parietal ~ HCC")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(hcc_overall_mean, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Temporal ~ HCC")
+
+```
+
+## Newborn DTI ~ second trimester HCC
+```{r}
+dti_newborn %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "Newborn Uncinate Fasciculus ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(cc, value, cc_full_AD:cc_full_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cc, scales = "free") +
+  labs(title = "Newborn Corpus Callosum Full ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "Newborn Cingulum ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(cgh, value, cgh_l_AD:cgh_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgh, scales = "free") +
+  labs(title = "Newborn Hippocampal Cingulum ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(cst, value, cst_l_AD:cst_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cst, scales = "free") +
+  labs(title = "Newborn Corticospinal Tract ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "Newborn Fornix ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "Newborn Inferior Fronto-Occipital Fasciculus ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(ilf, value,  ilf_l_AD:ilf_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ilf, scales = "free") +
+  labs(title = "Newborn Inferior Longitudinal Fasciculus ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_fp_l_AD:slf_fp_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Fronto-Parietal ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_ft_l_AD:slf_ft_l_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Fronto-Temporal ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_pt_l_AD:slf_pt_l_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Parietal-Temporal ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_f_l_AD:thal_f_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Frontal ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_o_l_AD:thal_o_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Occipatal ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_p_l_AD:thal_p_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Parietal ~ HCC 2nd Trimester")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(hcc_second, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Temporal ~ HCC 2nd Trimester")
+```
+
+Small correlations with FA in left uncinate, fornix, right ILF, parietal-temporal portion of SLF, left and right temporal portion of thalamic radiation. 
+Strong correlations with FA in left and right corticospinal tract.
+
+## Plot identified correlations (Newborn DTI ~ HCC second trimester)
+```{r}
+dti_newborn %>% 
+  ggplot(aes(hcc_overall_mean, unc_l_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(-.5, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .24, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: log HCC (pg/ml)",
+    y = "Newborn left uncinate FA"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/NBuf_HCC.png", width = 8, height = 7)
+cor.test(dti_newborn$hcc_overall_mean, dti_newborn$unc_l_FA)
+
+dti_newborn %>% 
+  ggplot(aes(hcc_overall_mean, fornix_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  scale_x_continuous(breaks = seq.int(-.5, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.20, .26, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: log HCC (pg/ml)",
+    y = "Newborn fornix FA"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/NBfornix_HCC.png", width = 8, height = 7)
+cor.test(dti_newborn$hcc_overall_mean, dti_newborn$fornix_FA)
+
+dti_newborn %>% 
+  ggplot(aes(hcc_second, thal_t_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .24, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "log hair cortisol (pg/ml) in 2nd trimester",
+    y = "Newborn Thalamic R. (temporal) FA"
+  )
+```
+
+## Newborn DTI ~ preconception stress severity
+```{r}
+dti_newborn %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "Newborn Uncinate Fasciculus ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(cc, value, cc_full_AD:cc_full_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cc, scales = "free") +
+  labs(title = "Newborn Corpus Callosum Full ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "Newborn Cingulum ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(cgh, value, cgh_l_AD:cgh_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgh, scales = "free") +
+  labs(title = "Newborn Hippocampal Cingulum ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(cst, value, cst_l_AD:cst_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cst, scales = "free") +
+  labs(title = "Newborn Corticospinal Tract ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "Newborn Fornix ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "Newborn Inferior Fronto-Occipital Fasciculus ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(ilf, value,  ilf_l_AD:ilf_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ilf, scales = "free") +
+  labs(title = "Newborn Inferior Longitudinal Fasciculus ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_fp_l_AD:slf_fp_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Fronto-Parietal ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_ft_l_AD:slf_ft_l_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Fronto-Temporal ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(slf, value,  slf_pt_l_AD:slf_pt_l_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "Newborn Superior Longitudinal Fasciculus Parietal-Temporal ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_f_l_AD:thal_f_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Frontal ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_o_l_AD:thal_o_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Occipatal ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_p_l_AD:thal_p_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Parietal ~ Preconception Stress Severity")
+
+dti_newborn %>% 
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "Newborn Thalamic Radiation Temporal ~ Preconception Stress Severity")
+```
+Small positive correlations between preconception stress severity and FA in the cingulum, 
+Small negative correlations between preconception stress severity and FA in the fornix, ILF, thalamic radiation (temporal)
+
+## Plot identified correlations (Newborn DTI ~ LSC-R (stress interviews))
+```{r}
+dti_newborn %>% 
+  ggplot(aes(sum_sev, fornix_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: Maternal life stress",
+    y = "Newborn fornix FA"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/NBfornix_sumsev.png", width = 8, height = 7)
+
+dti_newborn %>% 
+  filter(!is.na(pregnancy_stress)) %>% 
+  ggplot(aes(pregnancy_stress, fornix_FA)) +
+  geom_boxplot() +
+  geom_point() +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Prenatal stress",
+    y = "Newborn fornix FA"
+  )
+
+dti_newborn %>% 
+  ggplot(aes(sum_sev_precon_win, ilf_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "Newborn Right ILF FA"
+  )
+
+dti_newborn %>% 
+  filter(!is.na(pregnancy_stress)) %>% 
+  ggplot(aes(pregnancy_stress, ilf_r_FA)) +
+  geom_boxplot() +
+  geom_point() +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Prenatal stress",
+    y = "Newborn Right ILF FA"
+  )
+
+dti_newborn %>% 
+  ggplot(aes(sum_sev_precon_win, thal_t_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "Newborn Thalamic Radiation (temporal cortex) FA"
+  )
+
+dti_newborn %>% 
+  filter(!is.na(pregnancy_stress)) %>% 
+  ggplot(aes(pregnancy_stress, thal_t_r_FA)) +
+  geom_boxplot() +
+  geom_point() +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Prenatal stress",
+    y = "Newborn Thalamic Radiation (temporal cortex)"
+  )
+```
+
+
+## 6 months DTI ~ preconception stress severity
+```{r}
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>% 
+  gather(cc, value, cc_full_AD:cc_full_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cc, scales = "free") +
+  labs(title = "6-month Corpus Callosum Full ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "6-month Cingulum ~ Preconception Stress Severity")
+       
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(cgh, value, cgh_l_AD:cgh_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgh, scales = "free") +
+  labs(title = "6-month Hippocampal Cingulum ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(cst, value, cst_l_AD:cst_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cst, scales = "free") +
+  labs(title = "6-month Corticospinal Tract ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(ifo, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ifo, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(ilf, value,  ilf_l_AD:ilf_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ilf, scales = "free") +
+  labs(title = "6-month Inferior Longitudinal Fasciculus ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(slf, value,  slf_fp_l_AD:slf_fp_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Parietal ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(slf, value,  slf_ft_l_AD:slf_ft_l_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Temporal ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(slf, value,  slf_pt_l_AD:slf_pt_l_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Parietal-Temporal ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(tr, value,  thal_f_l_AD:thal_f_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Frontal ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(tr, value,  thal_o_l_AD:thal_o_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Occipatal ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(tr, value,  thal_p_l_AD:thal_p_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Parietal ~ Preconception Stress Severity")
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(sum_sev_precon_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Preconception Stress Severity")
+ 
+```
+
+Strong negative correlations between stress prior to conception and FA in the fornix, left uncinate
+Small/medium negative correlations between stress prior to conception and FA in left hippocampal cingulum, IFOF, ILF, SLF (fronto-parietal), SLF (parietal-temporal), thalamic radiation (occipatal), thalamic radiation (temporal).
+
+## Plot identified correlations (6 month DTI ~ LSC-R (stress interviews))
+```{r}
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win), !is.na(sens_M)) %>% 
+  ggplot(aes(sum_sev_precon_win, unc_l_FA, color = factor(sens_M >= median(sens_M, na.rm = TRUE)))) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "6 months left uncinate FA"
+  )
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>% 
+  ggplot(aes(sum_sev_precon_win, fornix_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "6 months fornix FA"
+  )
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>% 
+  ggplot(aes(sum_sev_precon_win, cgh_l_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "6 months left hippocampal cingulum FA"
+  )
+
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>% 
+  ggplot(aes(sum_sev_precon_win, slf_fp_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "6 months left SLF (fronto-parietal) FA"
+  )
+
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>% 
+  ggplot(aes(sum_sev_precon_win, thal_t_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "6 months left Thalamic Rad. (temporal) FA"
+  )
+
+dti_6mo %>% 
+  filter(!is.na(sum_sev_precon_win)) %>% 
+  ggplot(aes(sum_sev_precon_win, ifo_l_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 3) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 18) 
+  ) +
+  labs(
+    x = "Preconception stress severity",
+    y = "6 months left IFOF FA"
+  )
+
+```
+
+Overall, the fornix is implicated in every analysis.
+HCC in second trimester is negatively associated with fornix FA at newborn, preconception stress severity is negatively associated with fornix FA at newborn, preconception stress severity in negatively associated with fornix FA at age 6 months. 
+
+## 6 months DTI ~ postnatal stress (CRISYS)
+Removing 1 large outlier for all these as it makes it impossible to see trends. 
+
+```{r}
+dti_6mo %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Postnatal Stress")
+
+dti_6mo %>% 
+  filter(unc_r_FA < .30) %>% 
+  ggplot(aes(sixmonth_crisys_win, unc_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: Posnatal life stress",
+    y = "6-month right UF FA"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moUF_crisys.png", width = 8, height = 7)
+cor.test(dti_6mo$sixmonth_crisys_win, dti_6mo$unc_r_FA)
+
+dti_6mo %>% 
+  gather(cc, value, cc_full_AD:cc_full_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cc, scales = "free") +
+  labs(title = "6-month Corpus Callosum Full ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "6-month Cingulum ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(cgh, value, cgh_l_AD:cgh_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgh, scales = "free") +
+  labs(title = "6-month Hippocampal Cingulum ~ Postnatal Stress")
+
+dti_6mo %>% 
+  #filter(unc_r_FA < .30) %>% 
+  ggplot(aes(sixmonth_crisys_win, cgh_l_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: Posnatal life stress",
+    y = "6-month l. hippocampal cingulum FA"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moLcgh_crisys.png", width = 8, height = 7)
+cor.test(dti_6mo$sixmonth_crisys_win, dti_6mo$cgh_l_FA)
+
+dti_6mo %>% 
+  gather(cst, value, cst_l_AD:cst_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cst, scales = "free") +
+  labs(title = "6-month Corticospinal Tract ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Postnatal Stress")
+
+dti_6mo %>% 
+  filter(unc_r_FA < .30) %>% 
+  ggplot(aes(sixmonth_crisys_win, fornix_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Sustained threat: Posnatal life stress",
+    y = "6-month fornix FA"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moFornix_crisys.png", width = 8, height = 7)
+cor.test(dti_6mo$sixmonth_crisys_win, dti_6mo$fornix_FA)
+
+dti_6mo %>% 
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(ilf, value,  ilf_l_AD:ilf_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ilf, scales = "free") +
+  labs(title = "6-month Inferior Longitudinal Fasciculus ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(slf, value,  slf_fp_l_AD:slf_fp_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Parietal ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(slf, value,  slf_ft_l_AD:slf_ft_l_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Temporal ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(slf, value,  slf_pt_l_AD:slf_pt_l_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Parietal-Temporal ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(tr, value,  thal_f_l_AD:thal_f_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Frontal ~ Postnatal Stress")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_o_l_AD:thal_o_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Occipatal ~ Postnatal Stress")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_p_l_AD:thal_p_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Parietal ~ Postnatal Stress")
+
+dti_6mo %>% 
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(sixmonth_crisys_win, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Postnatal Stress")
+
+
+```
+
+Small negative correlations between postnatal stress and FA in the uncinate, hippocampal cingulum, fornix, thalamic radiation (occiptal), thalamic radiation (temporal).
+Small positive correlations between postnatal stress and FA in the cingulum.
+
+## 6 months DTI ~ LENA AWC
+
+```{r}
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cc, value, cc_full_AD:cc_full_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cc, scales = "free") +
+  labs(title = "6-month Corpus Callosum Full ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "6-month Cingulum ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cgh, value, cgh_l_AD:cgh_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgh, scales = "free") +
+  labs(title = "6-month Hippocampal Cingulum ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cst, value, cst_l_AD:cst_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cst, scales = "free") +
+  labs(title = "6-month Corticospinal Tract ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(ilf, value,  ilf_l_AD:ilf_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ilf, scales = "free") +
+  labs(title = "6-month Inferior Longitudinal Fasciculus ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(slf, value,  slf_fp_l_AD:slf_fp_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Parietal ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(slf, value,  slf_ft_l_AD:slf_ft_l_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Temporal ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(slf, value,  slf_pt_l_AD:slf_pt_l_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Parietal-Temporal ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_f_l_AD:thal_f_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Frontal ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_o_l_AD:thal_o_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Occipatal ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_p_l_AD:thal_p_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Parietal ~ Adult Words")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(AWC_rate_D1, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Adult Words")
+```
+
+##6 months DTI ~ LENA CTC rate
+```{r}
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cc, value, cc_full_AD:cc_full_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cc, scales = "free") +
+  labs(title = "6-month Corpus Callosum Full ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "6-month Cingulum ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cgh, value, cgh_l_AD:cgh_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgh, scales = "free") +
+  labs(title = "6-month Hippocampal Cingulum ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(cst, value, cst_l_AD:cst_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cst, scales = "free") +
+  labs(title = "6-month Corticospinal Tract ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(ilf, value,  ilf_l_AD:ilf_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~ilf, scales = "free") +
+  labs(title = "6-month Inferior Longitudinal Fasciculus ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(slf, value,  slf_fp_l_AD:slf_fp_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Parietal ~ Conversational Turns")
+
+dti_6mo %>% 
+  gather(slf, value,  slf_ft_l_AD:slf_ft_l_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Fronto-Temporal ~ Conversational Turns")
+
+dti_6mo %>% 
+  gather(slf, value,  slf_pt_l_AD:slf_pt_l_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~slf, scales = "free") +
+  labs(title = "6-month Superior Longitudinal Fasciculus Parietal-Temporal ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_f_l_AD:thal_f_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Frontal ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_o_l_AD:thal_o_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Occipatal ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_p_l_AD:thal_p_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Parietal ~ Conversational Turns")
+
+dti_6mo %>% 
+  filter(unc_l_FA < .7) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(CTC_rate_D1, value)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Conversational Turns")
+
+glimpse(demo)
+```
+
+## 6 months DTI ~ Dependability 
+```{r}
+dti_6mo %>% 
+  filter(unc_r_FA < .30 & awc_prop_D1 > .2) %>% 
+  ggplot(aes(awc_prop_D1, unc_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Social communication: Dependability",
+    y = "6-month right UF FA"
+  )
+
+dti_6mo %>% 
+  filter(awc_prop_D1 > .2) %>% 
+  ggplot(aes(awc_prop_D1, unc_l_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Social communication: Dependability",
+    y = "6-month left UF FA"
+  )
+
+dti_6mo %>% 
+  filter(awc_prop_D1 > .2) %>% 
+  ggplot(aes(awc_prop_D1, fornix_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Social communication: Dependability",
+    y = "6-month fornix FA"
+  )
+
+dti_6mo %>% 
+  filter(awc_prop_D1 > .2) %>% 
+  ggplot(aes(awc_prop_D1, cgh_l_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Social communication: Dependability",
+    y = "6-month left hippocampal cingulum FA"
+  )
+
+dti_6mo %>% 
+  filter(awc_prop_D1 > .2) %>% 
+  ggplot(aes(awc_prop_D1, cgh_r_FA)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Social communication: Dependability",
+    y = "6-month right hippocampal cingulum FA"
+  )
+
+```
+
+
+## 6 months DTI ~ maternal sensitivity 
+```{r}
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(sens_M, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Maternal Sensitivity")
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>% 
+  ggplot(aes(sens_M, unc_r_RD)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(1, 6, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Maternal sensitivity",
+    y = "6-month R. UF RD"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moUFRD_sens.png", width = 7, height = 6)
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(sens_M, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Maternal Sensitivity")
+
+dti_6mo %>% 
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(sens_M, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "6-month Hippocampal Cingulum ~ Maternal Sensitivity")
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>% 
+  ggplot(aes(sens_M, cgc_r_RD)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(1, 6, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 28),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Maternal sensitivity",
+    y = "6-month l. Hipp. Cingulum RD"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moCGHRD_sens.png", width = 7, height = 6)
+
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>%
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(sens_M, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Maternal Sensitivity")
+
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(sens_M, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Maternal Sensitivity")
+```
+
+## 6 months DTI ~ fluctuation in maternal sensitivity 
+```{r}
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(r1_sens_ssd, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Maternal unpredictability")
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(r1_sens_ssd, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Maternal unpredictability")
+
+dti_6mo %>% 
+  gather(cgc, value, cgc_l_AD:cgc_r_RD) %>% 
+  ggplot(aes(r1_sens_ssd, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~cgc, scales = "free") +
+  labs(title = "6-month Hippocampal Cingulum ~ Maternal unpredictability")
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>%
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(r1_sens_ssd, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Maternal unpredictability")
+
+dti_6mo %>% 
+  filter(!is.na(sens_M)) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(r1_sens_ssd, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Maternal unpredictability")
+```
+
+## 6 months DTI ~ maternal sensitive touch 
+```{r}
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(sens_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Maternal sensitive touch")
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(sens_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Maternal sensitive touch")
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(sens_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Maternal sensitive touch")
+
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(sens_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Maternal sensitive touch")
+```
+
+## 6 months DTI ~ maternal intrusive touch 
+```{r}
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(intrus_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Maternal intrusive touch")
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(intrus_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Maternal intrusive touch")
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(intrus_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Maternal intrusive touch")
+
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(intrus_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Maternal intrusive touch")
+```
+
+## 6 months DTI ~ maternal warm touch 
+```{r}
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>% 
+  gather(uncinate, value, unc_l_AD:unc_r_RD) %>% 
+  ggplot(aes(posreg_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~uncinate, scales = "free") +
+  labs(title = "6-month Uncinate Fasciculus ~ Maternal warm touch")
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(fornix, value, fornix_AD:fornix_RD) %>% 
+  ggplot(aes(posreg_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Fornix ~ Maternal warm touch")
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>% 
+  ggplot(aes(sens_touch, cgc_r_RD)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(1, 6, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 28),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Maternal touch",
+    y = "6-month l. Hipp. cingulum RD"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moCGH_senstouch.png", width = 7, height = 6)
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(fornix, value,  ifo_l_AD:ifo_l_RD) %>% 
+  ggplot(aes(posreg_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~fornix, scales = "free") +
+  labs(title = "6-month Inferior Fronto-Occipital Fasciculus ~ Maternal warm touch")
+
+
+dti_6mo %>% 
+  filter(!is.na(touch_M)) %>%
+  gather(tr, value,  thal_t_l_AD:thal_t_r_RD) %>% 
+  ggplot(aes(posreg_touch, value)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(.~tr, scales = "free") +
+  labs(title = "6-month Thalamic Radiation Temporal ~ Maternal warm touch")
+```
+
+
+##Change in DTI ~ Second trimester HCC
+
+Only 2 infants have DTI data at both time points. 
+```{r}
+dti_wf <-
+  dti %>% 
+  select(
+    ID,
+    timepoint,
+    hcc_second,
+    unc_l_FA,
+    unc_r_FA,
+    fornix_FA,
+    slf_pt_l_FA,
+    thal_t_r_FA
+  ) %>% 
+  gather(key, value, unc_l_FA:thal_t_r_FA) %>% 
+  unite(temp, timepoint, key) %>% 
+  spread(temp, value) 
+  
+dti_wf <- 
+  dti_wf %>% 
+  mutate(
+    uf_r_FA_delta = six_months_unc_r_FA - newborn_unc_r_FA,
+    uf_l_FA_delta = six_months_unc_l_FA - newborn_unc_l_FA,
+    fornix_FA_delta = six_months_fornix_FA - newborn_fornix_FA,
+    thal_t_r_FA_delta = six_months_thal_t_r_FA - newborn_thal_t_r_FA,
+    slf_pt_l_FA_delta = six_months_slf_pt_l_FA - newborn_slf_pt_l_FA
+  )
+```
+
+# Resting-state
+
+## Read in data
+```{r}
+##Read in left and right amygdala extracted betas
+l_amyg <- 
+  read_xlsx(rsfmri_6mo_file, sheet = "L_amyg_extracted_betas") %>% 
+  rename(
+    ID = Subject
+  ) %>% 
+  mutate(
+    ID = str_replace(ID, "-C-T1|-L-T3|x", ""),
+    ID = str_replace(ID, "-C-T1", ""),
+    ID = as.integer(ID)
+  ) %>% 
+  left_join(lscr_T1lg_6mocs, by = "ID") %>% 
+  #left_join(touch_wf, by = "ID") %>% 
+  #left_join(sfp_care_wf, by = "ID") %>% 
+  left_join(crisys_wf, by = "ID") 
+  #left_join(q_18month, by = "ID") %>% 
+  #left_join(ibq, by = "ID")
+
+r_amyg <- 
+  read_xlsx(rsfmri_6mo_file, sheet = "R_amyg_extracted_betas") %>% 
+  rename(
+    ID = Subject
+  ) %>% 
+  mutate(
+    ID = str_replace(ID, "-C-T1|-L-T3|x", ""),
+    ID = str_replace(ID, "-C-T1", ""),
+    ID = as.integer(ID)
+  ) %>% 
+  left_join(lscr_T1lg_6mocs, by = "ID") %>% 
+  #left_join(touch_wf, by = "ID") %>% 
+  #left_join(sfp_care_wf, by = "ID") %>% 
+  left_join(crisys_wf, by = "ID") 
+  #left_join(q_18month, by = "ID") %>% 
+  #left_join(ibq, by = "ID")
+
+```
+
+## 6 month rsfMRI ~ preconception stress severity
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Stress severity prior to birth"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev, clust48)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Pre-birth stress severity",
+    y = "L. amygdala - L. SPL"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moSPL_sumsev.png", width = 7, height = 6)
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Preconception stress severity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Preconception stress severity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev, clust58)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(size = 30),
+    axis.title.y = element_text(size = 26),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Pre-birth stress severity",
+    y = "L. amygdala - L. precentral gyrus "
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moPCG_sumsev.png", width = 7, height = 6)
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Preconception stress severity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Preconception stress severity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Preconception stress severity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Preconception stress severity"
+  )
+
+```
+
+### amygdala - subcortical regions
+
+```{r}
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust65)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Putamen/Pallidum ",
+    x = "Preconception stress severity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. Putamen/Pallidum ",
+    x = "Preconception stress severity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust70)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Cerebellar vermis ",
+    x = "Preconception stress severity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust45)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Cerebellar vermis ",
+    x = "Preconception stress severity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sum_sev, clust45)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(size = 30),
+    axis.title.y = element_text(size = 24),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Pre-birth stress severity",
+    y = "R. amygdala - R. Cerebellar vermis "
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moCV_sumsev.png", width = 7, height = 6)
+
+
+r_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust46)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Dorsal striatum ",
+    x = "Preconception stress severity"
+  )
+
+```
+
+### amygdala - prefrontal regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust51)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. OFC ",
+    x = "Preconception stress severity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust68)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. DLPFC ",
+    x = "Preconception stress severity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sum_sev, clust68)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  #scale_x_continuous(breaks = seq.int(0, 2.5, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Pre-birth stress severity",
+    y = "L. amygdala - R. dlPFC"
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6modlPFC_sumsev.png", width = 7, height = 6)
+
+l_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust71)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. DLPFC ",
+    x = "Preconception stress severity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sum_sev_precon_win, clust40)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. DLPFC ",
+    x = "Preconception stress severity"
+  )
+
+```
+
+## 6 month rsfMRI ~ maternal touch
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Maternal touch"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_touch, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Maternal touch"
+  )
+
+
+```
+
+### amygdala - subcortical regions
+
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust65)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Putamen/Pallidum ",
+    x = "Maternal touch"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_touch, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. Putamen/Pallidum ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust70)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Cerebellar vermis ",
+    x = "Maternal touch"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_touch, clust45)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Cerebellar vermis ",
+    x = "Maternal touch"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_touch, clust46)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Dorsal striatum ",
+    x = "Maternal touch"
+  )
+
+```
+
+### amygdala - prefrontal regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust51)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. OFC ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust68)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. DLPFC ",
+    x = "Maternal touch"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_touch, clust71)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. DLPFC ",
+    x = "Maternal touch"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_touch, clust40)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. DLPFC ",
+    x = "Maternal touch"
+  )
+
+```
+
+## 6 month rsfMRI ~ maternal sensitivty
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_M, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  filter(!is.na(sens_M)) %>% 
+  ggplot(aes(sens_M, clust48)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(1, 6, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 28),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Maternal sensitivity",
+    y = "L. amygdala - L. SPL "
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moSPLrs_sens.png", width = 7, height = 6)
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_M, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Maternal sensitivity"
+  )
+
+```
+
+### amygdala - subcortical regions
+
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_M, clust65)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Putamen/Pallidum ",
+    x = "Maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_M, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. Putamen/Pallidum ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust70)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Cerebellar vermis ",
+    x = "Maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_M, clust45)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Cerebellar vermis ",
+    x = "Maternal sensitivity"
+  )
+
+r_amyg %>% 
+  filter(!is.na(sens_M)) %>% 
+  ggplot(aes(sens_M, clust45)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(1, 6, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Maternal sensitivity",
+    y = "R. amygdala - R. Cerebellar vermis "
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moCVrs_sens.png", width = 7, height = 6)
+
+r_amyg %>% 
+  ggplot(aes(sens_M, clust46)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Dorsal striatum ",
+    x = "Maternal sensitivity"
+  )
+
+```
+
+### amygdala - prefrontal regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_M, clust51)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. OFC ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust68)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. DLPFC ",
+    x = "Maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_M, clust71)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. DLPFC ",
+    x = "Maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_M, clust40)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. DLPFC ",
+    x = "Maternal sensitivity"
+  )
+
+r_amyg %>% 
+  filter(!is.na(sens_M)) %>% 
+  ggplot(aes(sens_M, clust40)) +
+  geom_point(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, size = 4) +
+  scale_x_continuous(breaks = seq.int(1, 6, .5)) +
+  #scale_y_continuous(breaks = seq.int(.19, .30, .01)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 25),
+    axis.text = element_text(size = 22) 
+  ) +
+  labs(
+    x = "Maternal sensitivity",
+    y = "R. amygdala - L. DLPFC "
+  )
+
+ggsave("~/Desktop/BABIES/r01_winter_2019/plots/6moDLPFCrs_sens.png", width = 7, height = 6)
+```
+
+
+## 6 month rsfMRI ~ fluctuation in maternal sensitivty
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+```
+
+### amygdala - subcortical regions
+
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust65)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Putamen/Pallidum ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. Putamen/Pallidum ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust70)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Cerebellar vermis ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust45)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Cerebellar vermis ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust46)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Dorsal striatum ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+```
+
+### amygdala - prefrontal regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust51)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. OFC ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust68)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. DLPFC ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust71)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. DLPFC ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sens_mean_ssd, clust40)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. DLPFC ",
+    x = "Fluctuation in maternal sensitivity"
+  )
+
+```
+
+## 6 month rsfMRI ~ postnatal stress
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_mean, clust48, color = factor(pregnancy_stress))) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Postnatal stress"
+  )
+
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Postnatal stress"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Postnatal stress"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Postnatal stress"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Postnatal stress"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Postnatal stress"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Postnatal stress"
+  )
+
+```
+
+### amygdala - subcortical regions
+
+```{r}
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust65)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Putamen/Pallidum ",
+    x = "Postnatal stress"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. Putamen/Pallidum ",
+    x = "Postnatal stress"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust70)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Cerebellar vermis ",
+    x = "Postnatal stress"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust45)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Cerebellar vermis ",
+    x = "Postnatal stress"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust46)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Dorsal striatum ",
+    x = "Postnatal stress"
+  )
+
+```
+
+### amygdala - prefrontal regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust51)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. OFC ",
+    x = "Postnatal stress"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust68)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. DLPFC ",
+    x = "Postnatal stress"
+  )
+
+l_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust71)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. DLPFC ",
+    x = "Postnatal stress"
+  )
+
+r_amyg %>% 
+  ggplot(aes(sixmonth_crisys_win, clust40)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. DLPFC ",
+    x = "Postnatal stress"
+  )
+
+```
+
+## 18 mo ITSEA Externalizing ~ 6 month rsfmri
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Externalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_extern, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Externalizing symptoms"
+  )
+
+```
+
+### amygdala - subcortical regions
+
+```{r}
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust65)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Putamen/Pallidum ",
+    x = "Externalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_extern, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. Putamen/Pallidum ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust70)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Cerebellar vermis ",
+    x = "Externalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_extern, clust45)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Cerebellar vermis ",
+    x = "Externalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_extern, clust46)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Dorsal striatum ",
+    x = "Externalizing symptoms"
+  )
+
+```
+
+### amygdala - prefrontal regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust51)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. OFC ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust68)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. DLPFC ",
+    x = "Externalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_extern, clust71)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. DLPFC ",
+    x = "Externalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_extern, clust40)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. DLPFC ",
+    x = "Externalizing symptoms"
+  )
+
+```
+
+## 18 mo ITSEA Negative emotionality ~ 6 month rsfmri
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(itsea_negemo, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Negative emotionality"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_negemo, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Negative emotionality"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_negemo, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Negative emotionality"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_negemo, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Negative emotionality"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_negemo, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Negative emotionality"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_negemo, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Negative emotionality"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_negemo, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Negative emotionality"
+  )
+
+```
+
+## 18 mo ITSEA Internalizing ~ 6 month rsfmri
+
+### amygdala - sensory processing regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. superior parietal lobule ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust55)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. superior parietal lobule ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust58)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. precentral gyrus ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust49)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. fusiform cortex ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust67)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Medial dorsal nucleus of thalamus ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust42)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - Bilateral medial dorsal nucleus of thalamus ",
+    x = "Internalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_intern, clust31)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. SMA ",
+    x = "Internalizing symptoms"
+  )
+
+```
+
+### amygdala - subcortical regions
+
+```{r}
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust65)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Putamen/Pallidum ",
+    x = "Internalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_intern, clust48)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. Putamen/Pallidum ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust70)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. Cerebellar vermis ",
+    x = "Internalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_intern, clust45)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Cerebellar vermis ",
+    x = "Internalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_intern, clust46)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - R. Dorsal striatum ",
+   x = "Internalizing symptoms"
+  )
+
+```
+
+### amygdala - prefrontal regions
+```{r}
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust51)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. OFC ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust68)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - R. DLPFC ",
+    x = "Internalizing symptoms"
+  )
+
+l_amyg %>% 
+  ggplot(aes(itsea_intern, clust71)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "L. amygdala - L. DLPFC ",
+    x = "Internalizing symptoms"
+  )
+
+r_amyg %>% 
+  ggplot(aes(itsea_intern, clust40)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    y = "R. amygdala - L. DLPFC ",
+    x = "Internalizing symptoms"
+  )
+```
+
+```{r}
+six_month_pred <-
+  lena_5min_cl_wf %>% 
+  left_join(sfp_care_wf, by = "ID") %>% 
+  left_join(crisys_wf, by = "ID")
+```
+

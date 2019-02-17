@@ -1,0 +1,6 @@
+"0","plot_histogram <- function(x) {"
+"0","    x = sym(x)"
+"0","  "
+"0","    ggplot(els_all_ratings, aes(!!x)) +"
+"0","    geom_histogram(binwidth = 1)"
+"0","}"

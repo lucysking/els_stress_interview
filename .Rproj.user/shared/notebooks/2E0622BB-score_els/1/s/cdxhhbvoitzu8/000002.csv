@@ -1,0 +1,6 @@
+"0","sev_rating_vars_6 <-"
+"0","  els_t1_early_6 %>% "
+"0","  select("
+"0","    ends_with(""panel_objective_decision_re"")"
+"0","  ) %>% "
+"0","  names()"

@@ -1,0 +1,18 @@
+"0","```r
+#Libraries
+library(tidyverse)
+library(readxl)
+#Parameters
+dti_file_path <- \"~/Desktop/BABIES/r01_winter_2019/data/dti_text_files/\"
+rsfmri_6mo_file <- \"~/Desktop/BABIES/r01_winter_2019/data/clusters_extracted_betas.xlsx\"
+age_scan_file <- \"~/Desktop/BABIES/r01_winter_2019/data/age_scan.csv\"
+dti_files_df <-
+  tibble(
+    path = 
+      list.files(
+        path = dti_file_path,
+        pattern = \"\\d{3,}-\\w{1}-T\\d{1}_all_average.txt$\",
+        full.names = TRUE
+      )
+  )
+```"

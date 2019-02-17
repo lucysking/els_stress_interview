@@ -1,0 +1,36 @@
+"0","```r
+lscr_6mo <- 
+  readxl::read_xlsx(stress_ratings_cs_file) %>% 
+  rename(ID = record_id) %>% 
+  mutate_at(
+    vars(contains(\"preg\"), \"ID\"),
+    as.integer
+  ) %>%
+  mutate_at(
+    vars(contains(\"Sev\")),
+    as.double
+  ) %>% 
+  left_join(
+    dates %>% 
+      select(
+        ID,
+        baby_due_date,
+        mom_age_conception,
+        mom_age_babydob
+      ),
+    by = \"ID\"
+  )
+```"
+"1","
+-
+/
+                                                                                      
+"
+"1","New names:
+* lscr_acc_date -> lscr_acc_date..30
+* lscr_acc_date -> lscr_acc_date..33
+NAs introduced by coercion
+"
+"0","```r
+  
+```"

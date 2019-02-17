@@ -1,0 +1,22 @@
+"0","els_all_ratings <-"
+"0","  els_all_ratings %>% "
+"0","  left_join(els_t1_types, by = ""ELS_ID"") %>% "
+"0","  left_join(els_t2_types, by = ""ELS_ID"") %>% "
+"0","  distinct(ELS_ID, sumsev_type_t1, .keep_all = TRUE) %>% "
+"0","  left_join("
+"0","    read_csv(lca_class_t1_file) %>% "
+"0","      mutate("
+"0","        class = case_when("
+"0","          class == 1 ~ ""direct_victim"","
+"0","          class == 2 ~ ""family_instab"","
+"0","          class == 3 ~ ""typical_low"""
+"0","        )"
+"0","      ),"
+"0","    by = ""ELS_ID"""
+"0","  )"
+"2","Parsed with column specification:
+cols(
+  ELS_ID = [32mcol_double()[39m,
+  class = [32mcol_double()[39m
+)
+"

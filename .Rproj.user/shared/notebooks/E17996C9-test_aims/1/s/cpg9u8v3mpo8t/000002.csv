@@ -1,0 +1,12 @@
+"0","```r
+age_scan <-
+  read_csv(age_scan_file)
+```"
+"1","Parsed with column specification:
+cols(
+  ID = [32mcol_double()[39m,
+  male = [32mcol_double()[39m,
+  age_nb_corrected = [32mcol_double()[39m,
+  age_6mo_corrected = [32mcol_double()[39m
+)
+"

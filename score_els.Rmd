@@ -1,0 +1,1002 @@
+---
+title: "ELS Stress Interview Scoring"
+author: "Lucy King"
+output: 
+  html_notebook:
+    toc: true
+    toc_float: true
+---
+
+```{r}
+#Libraries
+library(tidyverse)
+library(haven)
+library(modelr)
+
+#Parameters
+els_t1_file <- 
+  "~/Desktop/ELS/stress_data/data/Best_ELS T1 Integrated Stress Interview_Panel Ratings_Copy 1._20180711.sav"
+
+els_t2_file <- 
+  "~/Desktop/ELS/stress_data/data/ELS T2 Integrated Stress Interview_Panel Ratings_Copy 1 USE_1._20180711.sav"
+
+lca_class_t1_file <- 
+  "~/Desktop/ELS/stress_data/data/els_t1_lca_class.csv"
+
+
+## Functions
+spread_els_data <- function(data, rating) {
+  
+  rating <- enquo(rating)
+  
+  data %>% 
+  select(
+    ELS_ID,
+    event_domain_re,
+    !! rating
+  ) %>% 
+  group_by(ELS_ID, event_domain_re) %>% 
+  filter(
+    !! rating == max(
+      !! rating, na.rm = TRUE
+    )
+  ) %>% 
+  distinct(
+    event_domain_re, 
+    !! rating
+  ) %>% 
+  gather(key1, value, !! rating) %>% 
+  unite(key2, event_domain_re, key1, sep = "_") %>% 
+  spread(key2, value) %>% 
+  ungroup()
+  
+}
+```
+
+# Read in T1 data 
+```{r read_data}
+els_t1 <-
+  read_sav(els_t1_file) %>%
+  mutate_at(
+    vars(Perpetrator:Panel_Independent_Decision),
+    funs(as.double)
+  ) %>% 
+  mutate(
+    ELS_ID = as.integer(ELS_ID),
+    Event_Domain = as.integer(Event_Domain),
+    Event_Domain_Notes = as.character(Event_Domain_Notes),
+    panel_objective_decision_re = recode(
+      Panel_Objective_Decision,
+      "1" = 0,
+      "1.5" = .5,
+      "2" = 1,
+      "2.5" = 1.5,
+      "3" = 2,
+      "3.5" = 2.5,
+      "4" = 3,
+      "4.5" = 3.5,
+      "5" = 4
+    ),
+    panel_objective_decision_re = if_else(
+      Event_Domain == 0, 
+      0, panel_objective_decision_re
+    ), 
+    child_subjective_rating = if_else(
+      Event_Domain == 0, 
+      0, Child_Subjective_Rating
+    ),
+    event_domain_re = recode(
+      Event_Domain,
+      "1" = "exp_acc",
+      "2" = "wit_acc",
+      "3" = "disaster",
+      "4" = "exp_ill",
+      "5" = "wit_ill",
+      "6" = "death",
+      "7" = "sep_wt", #separation from parents due to work/travel
+      "8" = "moved",
+      "9" = "divorce",
+      "10" = "sep_rfd", #separation from parents due to rehab, foster care, detention
+      "11" = "mental_ill",
+      "12" = "suicide",
+      "13" = "phys_ab",
+      "14" = "thrt_phys_ab",
+      "15" = "bully",
+      "16" = "kidnap",
+      "17" = "animal",
+      "18" = "parent_arg",
+      "19" = "thrt_domvio",
+      "20" = "dom_viol",
+      "21" = "legal_prob",
+      "22" = "comm_arg",
+      "23" = "comm_phys",
+      "24" = "war_terr",
+      "25" = "sex_ab",
+      "26" = "wit_sexab",
+      "27" = "emo_ab",
+      "28" = "neglect",
+      "29" = "finance",
+      "30" = "other",
+      "31" = "comm_inst",
+      "32" = "mug_rob",
+      .default = "nothing_reported"
+    )
+  ) %>% 
+  group_by(ELS_ID) %>% 
+  mutate(
+    num_report_t1 = if_else(
+      Event_Domain != 0,
+      n(), as.integer(0)
+    )
+  ) %>% 
+  ungroup()
+
+# replace user-defined missing values with NA
+els_t1[els_t1 == 777] <- NA
+els_t1[els_t1 == 888] <- NA
+els_t1[els_t1 == 999] <- NA
+```
+
+# Read in T2 data 
+```{r}
+els_t2 <-
+  read_sav(els_t2_file) %>%
+  mutate_at(
+    vars(Perpetrator:Panel_Independent_Decision),
+    funs(as.double)
+  ) %>% 
+  mutate(
+    ELS_ID = as.integer(ELS_ID), #coercing to integer to remove .2 and .5 indicators -- do not need them 
+    Event_Domain = as.integer(Event_Domain),
+    Event_Domain_Notes = as.character(Event_Domain_Notes),
+    panel_objective_decision_re = recode(
+      Panel_Objective_Decision,
+      "1" = 0,
+      "1.5" = .5,
+      "2" = 1,
+      "2.5" = 1.5,
+      "3" = 2,
+      "3.5" = 2.5,
+      "4" = 3,
+      "4.5" = 3.5,
+      "5" = 4
+    ),
+    panel_objective_decision_re = if_else(
+      Event_Domain == 0, 
+      0, panel_objective_decision_re
+    ), 
+    child_subjective_rating = if_else(
+      Event_Domain == 0, 
+      0, Child_Subjective_Rating
+    ),
+    event_domain_re = recode(
+      Event_Domain,
+      "1" = "exp_acc",
+      "2" = "wit_acc",
+      "3" = "disaster",
+      "4" = "exp_ill",
+      "5" = "wit_ill",
+      "6" = "death",
+      "7" = "sep_wt", #separation from parents due to work/travel
+      "8" = "moved",
+      "9" = "divorce",
+      "10" = "sep_rfd", #separation from parents due to rehab, foster care, detention
+      "11" = "mental_ill",
+      "12" = "suicide",
+      "13" = "phys_ab",
+      "14" = "thrt_phys_ab",
+      "15" = "bully",
+      "16" = "kidnap",
+      "17" = "animal",
+      "18" = "parent_arg",
+      "19" = "thrt_domvio",
+      "20" = "dom_viol",
+      "21" = "legal_prob",
+      "22" = "comm_arg",
+      "23" = "comm_phys",
+      "24" = "war_terr",
+      "25" = "sex_ab",
+      "26" = "wit_sexab",
+      "27" = "emo_ab",
+      "28" = "neglect",
+      "29" = "finance",
+      "30" = "other",
+      "31" = "comm_inst",
+      "32" = "mug_rob",
+      .default = "nothing_reported"
+    ) 
+  ) %>% 
+  group_by(ELS_ID) %>% 
+  mutate(
+    num_report_t2 = if_else(
+      Event_Domain != 0,
+      n(), as.integer(0)
+    )
+  ) %>% 
+  ungroup()
+
+# replace user-defined missing values with NA
+els_t2[els_t2 == 777] <- NA
+els_t2[els_t2 == 888] <- NA
+els_t2[els_t2 == 999] <- NA
+```
+
+# Calculate severity scores: Lifetime to T1
+```{r t1_lifetime_sumsev}
+els_t1_obj <- 
+  spread_els_data(els_t1, panel_objective_decision_re)
+
+els_t1_subj <- 
+  spread_els_data(els_t1, child_subjective_rating)
+```
+
+```{r}
+sev_rating_vars_T1 <-
+  els_t1_obj %>% 
+  select(
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  names()
+
+sub_sev_rating_vars_T1 <-
+  els_t1_subj %>% 
+  select(
+    ends_with("child_subjective_rating")
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t1_obj <-
+  els_t1_obj %>% 
+  mutate(
+    sumsev_type_t1 = pmap_dbl(
+      select(., sev_rating_vars_T1),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    z_sumsev_type_t1 = scale(sumsev_type_t1, scale = TRUE),
+    maxsev_t1 = pmap_dbl(
+      select(., sev_rating_vars_T1),
+      function(...) max(c(...), na.rm = TRUE)
+    ),
+    num_type_t1 = pmap_int(
+      select(., sev_rating_vars_T1),
+      function(...) sum(c(...) > 0, na.rm = TRUE)
+    )
+  ) %>% 
+  left_join(els_t1 %>% select(ELS_ID, num_report_t1) %>% unique(), by = "ELS_ID")
+```
+
+```{r}
+els_t1_subj <-
+  els_t1_subj %>% 
+  mutate(
+    sumsub_type_t1 = pmap_dbl(
+      select(., sub_sev_rating_vars_T1),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    z_sumsub_type_t1  = scale(sumsub_type_t1, scale = TRUE),
+    maxsub_t1 = pmap_dbl(
+      select(., sub_sev_rating_vars_T1),
+      function(...) max(c(...), na.rm = TRUE)
+    )
+  ) 
+```
+
+```{r}
+els_t1_wf <-
+  els_t1_obj %>% 
+  left_join(els_t1_subj, by = "ELS_ID")
+```
+
+# Calculate severity scores T2: Events occuring between T1 and T2
+```{r}
+els_t2_obj <- 
+  spread_els_data(els_t2, panel_objective_decision_re)
+
+els_t2_subj <- 
+  spread_els_data(els_t2, child_subjective_rating)
+```
+
+```{r}
+sev_rating_vars_T2 <-
+  els_t2_obj %>% 
+  select(
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  names()
+
+sub_sev_rating_vars_T2 <-
+  els_t2_subj %>% 
+  select(
+    ends_with("child_subjective_rating")
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t2_obj <- 
+  els_t2_obj %>% 
+  mutate(
+    sumsev_type_t2 = pmap_dbl(
+      select(., sev_rating_vars_T2),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    z_sumsev_type_t2 = scale(sumsev_type_t2, scale = TRUE),
+    maxsev_t2 = pmap_dbl(
+      select(., sev_rating_vars_T2),
+      function(...) max(c(...), na.rm = TRUE)
+    ),
+    num_type_t2 = pmap_int(
+      select(., sev_rating_vars_T2),
+      function(...) sum((c(...) > 0), na.rm = TRUE)
+    )
+  ) %>% 
+  left_join(els_t2 %>% select(ELS_ID, num_report_t2) %>% unique(), by = "ELS_ID")
+```
+
+```{r}
+els_t2_subj <- 
+  els_t2_subj %>% 
+  mutate(
+    sumsub_type_t2 = pmap_dbl(
+      select(., sub_sev_rating_vars_T2),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    z_sumsub_type_t2  = scale(sumsub_type_t2, scale = TRUE),
+    maxsub_t2 = pmap_dbl(
+      select(., sub_sev_rating_vars_T2),
+      function(...) max(c(...), na.rm = TRUE)
+    )
+  ) 
+```
+
+```{r}
+els_t2_wf <-
+  els_t2_obj %>% 
+  left_join(els_t2_subj, by = "ELS_ID")
+```
+
+# Calculate severity scores T1 and T2: Lifetime up to T2
+
+Important: If someone did not come in for T2 their "t1t2" scores are simply their t1 scores.
+```{r}
+els_t1t2_obj <- 
+  els_t1_obj %>% 
+  select(-ends_with("t1")) %>% 
+  bind_rows(
+    els_t2_obj %>% 
+      select(-ends_with("t2"))
+  ) %>% 
+  gather(type, rating, -ELS_ID) %>% 
+  mutate_at(
+    vars(rating),
+    as.double
+  ) %>% 
+  mutate_at(
+    vars(rating),
+    funs(
+      if_else(
+        is.na(.),
+        0, .
+      )
+    )
+  ) %>% 
+  group_by(ELS_ID, type) %>% 
+  filter(
+    rating == max(rating, na.rm = TRUE)
+  ) %>% 
+  distinct(type, rating) %>% 
+  spread(type, rating) %>% 
+  ungroup()
+```
+
+```{r t2_sumsev}
+els_t1t2_subj <- 
+  els_t1_subj %>% 
+  select(-ends_with("t1")) %>% 
+  bind_rows(
+    els_t2_subj %>% 
+      select(-ends_with("t2"))
+  ) %>% 
+  gather(type, rating, -ELS_ID) %>% 
+  mutate_at(
+    vars(rating),
+    as.double
+  ) %>% 
+  mutate_at(
+    vars(rating),
+    funs(
+      if_else(
+        is.na(.),
+        0, .
+      )
+    )
+  ) %>% 
+  group_by(ELS_ID, type) %>% 
+  filter(
+    rating == max(rating, na.rm = TRUE)
+  ) %>% 
+  distinct(type, rating) %>% 
+  spread(type, rating) %>% 
+  ungroup()
+```
+
+```{r}
+sev_rating_vars_t1t2 <-
+  els_t1t2_obj %>% 
+  select(
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  names()
+
+sub_sev_rating_vars_t1t2 <-
+  els_t1t2_subj %>% 
+  select(
+    ends_with("child_subjective_rating")
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t1t2_obj <- 
+  els_t1t2_obj %>% 
+  mutate(
+    sumsev_type_t1t2 = pmap_dbl(
+      select(., sev_rating_vars_t1t2),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    z_sumsev_type_t1t2 = scale(sumsev_type_t1t2, scale = TRUE),
+    maxsev_t1t2 = pmap_dbl(
+      select(., sev_rating_vars_t1t2),
+      function(...) max(c(...), na.rm = TRUE)
+    ),
+    num_type_t1t2 = pmap_int(
+      select(., sev_rating_vars_t1t2),
+      function(...) sum(c(...) > 0, na.rm = TRUE)
+    )
+  ) %>% 
+  left_join(els_t1 %>% select(ELS_ID, num_report_t1) %>% unique(), by = "ELS_ID") %>% 
+  left_join(els_t2 %>% select(ELS_ID, num_report_t2) %>% unique(), by = "ELS_ID") %>% 
+  group_by(ELS_ID) %>% 
+  mutate(
+    num_report_t1t2 = sum(
+      c(num_report_t1, num_report_t2),
+      na.rm = TRUE
+    )
+  ) %>% 
+  ungroup()
+```
+
+```{r}
+els_t1t2_subj <- 
+  els_t1t2_subj %>% 
+  mutate(
+    sumsub_type_t1t2 = pmap_dbl(
+      select(., sub_sev_rating_vars_t1t2),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    z_sumsub_type_t1t2  = scale(sumsub_type_t1t2, scale = TRUE),
+    maxsub_t1t2 = pmap_dbl(
+      select(., sub_sev_rating_vars_t1t2),
+      function(...) max(c(...), na.rm = TRUE)
+    )
+  ) %>% 
+  ungroup()
+```
+
+```{r}
+els_t1t2 <-
+  els_t1t2_obj %>% 
+  left_join(els_t1t2_subj, by = "ELS_ID") %>% 
+  distinct(ELS_ID, sumsev_type_t1t2, .keep_all = TRUE)
+```
+
+# Stress by development stage
+
+## Calculate sumsev_type T1: Onset age < 6
+Do not use if you want to use actual age of each event in your analysis. `distinct()` selects unique rows after filter to be events occuring with onset up to age 6. 
+```{r}
+els_t1_early_6 <-
+  els_t1 %>% 
+  select(
+    ELS_ID,
+    event_domain_re,
+    age_onset = Age_onset,
+    panel_objective_decision_re
+  ) %>% 
+  group_by(ELS_ID, event_domain_re) %>% 
+  filter(
+    panel_objective_decision_re == max(
+      panel_objective_decision_re, na.rm = TRUE
+    ),
+    age_onset < 6
+  ) %>% 
+  distinct(event_domain_re, panel_objective_decision_re) %>% 
+  gather(key1, value, panel_objective_decision_re) %>% 
+  unite(key2, event_domain_re, key1, sep = "_") %>% 
+  spread(key2, value) %>% 
+  ungroup()
+```
+
+```{r}
+sev_rating_vars_6 <-
+  els_t1_early_6 %>% 
+  select(
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t1_early_6 <- 
+  els_t1_early_6 %>% 
+  mutate(
+    sumsev_type_6 = pmap_dbl(
+      select(., sev_rating_vars_6),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    maxsev_6 = pmap_dbl(
+      select(., sev_rating_vars_6),
+      function(...) max(c(...), na.rm = TRUE)
+    ),
+    num_type_6 = pmap_dbl(
+      select(., sev_rating_vars_6),
+      function(...) sum((c(...) > 0), na.rm = TRUE)
+    )
+  ) 
+
+```
+
+
+## Calculate sumsev_type T1: Onset age >= 6
+Do not use if you want to use actual age of each event in your analysis. `distinct()` select unique rows after filter to be events occuring with onset age 6 or below.
+
+```{r}
+els_t1_early_7 <-
+  els_t1 %>% 
+  select(
+    ELS_ID,
+    event_domain_re,
+    age_onset = Age_onset,
+    panel_objective_decision_re
+  ) %>% 
+  group_by(ELS_ID, event_domain_re) %>% 
+  filter(
+    panel_objective_decision_re == max(
+      panel_objective_decision_re, na.rm = TRUE
+    ),
+    age_onset >= 6
+  ) %>% 
+  distinct(event_domain_re, panel_objective_decision_re) %>% 
+  gather(key1, value, panel_objective_decision_re) %>% 
+  unite(key2, event_domain_re, key1, sep = "_") %>% 
+  spread(key2, value) %>% 
+  ungroup()
+```
+
+```{r}
+sev_rating_vars_7 <-
+  els_t1_early_7 %>% 
+  select(
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t1_early_7 <- 
+  els_t1_early_7 %>% 
+  mutate(
+    sumsev_type_7 = pmap_dbl(
+      select(., sev_rating_vars_7),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    maxsev_7 = pmap_dbl(
+      select(., sev_rating_vars_7),
+      function(...) max(c(...), na.rm = TRUE)
+    ),
+    num_type_7 = pmap_int(
+      select(., sev_rating_vars_7),
+      function(...) sum((c(...) > 0), na.rm = TRUE)
+    )
+  ) 
+```
+
+## Calculate sumsev_type T1 and T2: Onset age >= 6 (i.e., events reported as occuring >=6 at either T1 or T2)
+
+Not filterting T2 data set to >= age 6 because all events in this dataset occured within T1 to T2 interval. 
+```{r}
+els_t1t2_7 <-
+  els_t1 %>% 
+  select(
+    ELS_ID,
+    event_domain_re,
+    age_onset = Age_onset,
+    panel_objective_decision_re
+  ) %>% 
+  group_by(ELS_ID, event_domain_re) %>% 
+  filter(
+    panel_objective_decision_re == max(
+      panel_objective_decision_re, na.rm = TRUE
+    ),
+    age_onset >= 6
+  ) %>% 
+  distinct(event_domain_re, panel_objective_decision_re) %>% 
+  gather(key1, value, panel_objective_decision_re) %>% 
+  mutate(
+    timepoint = "T1"
+  ) %>% 
+  bind_rows(
+    els_t2 %>% 
+      select(
+        ELS_ID,
+        event_domain_re,
+        age_onset = Age_onset,
+        age_offset = Age_offset,
+        panel_objective_decision_re
+      ) %>% 
+      group_by(ELS_ID, event_domain_re) %>% 
+      filter(
+        panel_objective_decision_re == max(
+          panel_objective_decision_re, na.rm = TRUE
+        )
+      ) %>% 
+      distinct(event_domain_re, panel_objective_decision_re) %>% 
+      gather(key1, value, panel_objective_decision_re) %>% 
+      mutate(timepoint = "T2")
+  ) %>% 
+  unite(key2, event_domain_re, key1, sep = "_") %>% 
+  unite(key3, timepoint, key2, sep = "_") %>% 
+  spread(key3, value) %>% 
+  ungroup()
+```
+
+```{r}
+sev_rating_vars_t1t2_7 <-
+  els_t1t2_7 %>% 
+  select(
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t1t2_7 <- 
+  els_t1t2_7 %>% 
+  mutate(
+    sumsev_type_7_t1t2 = pmap_dbl(
+      select(., sev_rating_vars_t1t2_7),
+      function(...) sum(c(...), na.rm = TRUE)
+    ),
+    maxsev_7_t1t2 = pmap_dbl(
+      select(., sev_rating_vars_t1t2_7),
+      function(...) max(c(...), na.rm = TRUE)
+    ),
+    num_type_7_t1t2 = pmap_int(
+      select(., sev_rating_vars_t1t2_7),
+      function(...) sum((c(...) > 0), na.rm = TRUE)
+    )
+  ) 
+```
+
+# Stress sensitivity
+
+## Calculate stress sensitivity T1: Lifetime to T1
+```{r}
+sens_t1_mod <- lm(z_sumsub_type_t1 ~ z_sumsev_type_t1, data = els_t1_wf)
+
+els_t1_wf <-
+  els_t1_wf %>% 
+  add_residuals(sens_t1_mod, var = "sss_t1")
+```
+
+## Calculate stress sensitivity T2: Events occuring between T1 and T2
+```{r}
+sens_t2_mod <- lm(z_sumsub_type_t2 ~ z_sumsev_type_t2, data = els_t2_wf)
+
+els_t2_wf <-
+  els_t2_wf %>% 
+  add_residuals(sens_t2_mod, var = "sss_t2")
+```
+
+## Calculate stress sensitivity T1 and T2: Lifetime up to T2
+```{r}
+sens_t1t2_mod <- lm(z_sumsub_type_t1t2 ~ z_sumsev_type_t1t2, data = els_t1t2)
+
+els_t1t2 <-
+  els_t1t2 %>% 
+  add_residuals(sens_t1t2_mod, var = "sss_t1t2")
+```
+
+## Reliability
+
+## ICC for rater
+```{r}
+#T1
+els_t1_icc <-
+  els_t1 %>% 
+  select(
+    Panel_Objective_Rating_1_natalie:Panel_Objective_Rating_5_alex
+  )
+psych::ICC(els_t1_icc)
+
+#T2
+els_t2_icc <-
+  els_t2 %>% 
+  select(
+    Panel_Objective_Rating_1_natalie:Panel_Objective_Rating_5_tiffany
+  )
+psych::ICC(els_t2_icc)
+```
+
+## internal consistency of stress ratings 
+```{r}
+#T1
+els_t1_wf_alpha <-
+  els_t1_wf %>% 
+  mutate_all(
+    as.double
+  ) %>% 
+  mutate_all(
+    . %>% 
+      if_else(
+        is.na(.),
+        0, .
+      )
+  ) %>% 
+  select(
+    contains("panel")
+  )
+
+psych::alpha(els_t1_wf_alpha)
+
+#T2
+els_t2_wf_alpha <-
+  els_t2_wf %>% 
+  mutate_all(
+    as.double
+  ) %>% 
+  mutate_all(
+    . %>% 
+      if_else(
+        is.na(.),
+        0, .
+      )
+  ) %>% 
+  select(
+    contains("panel")
+  )
+
+psych::alpha(els_t2_wf_alpha)
+```
+
+# Create a combined data set 
+```{r}
+els_all_ratings <-
+  els_t1_wf %>% 
+  select(
+    ELS_ID,
+    sumsev_type_t1:num_report_t1,
+    sumsub_type_t1:sss_t1
+  ) %>% 
+  left_join(
+    els_t2_wf %>% 
+      select(
+        ELS_ID,
+        sumsev_type_t2:num_report_t2,
+        sumsub_type_t2:sss_t2
+      ),
+    by = "ELS_ID"
+  ) %>% 
+  distinct(ELS_ID, sumsev_type_t1, .keep_all = TRUE) %>% 
+  left_join(
+    els_t1t2 %>% 
+      select(
+        ELS_ID,
+        sumsev_type_t1t2:num_report_t1t2,
+        sumsub_type_t1t2:sss_t1t2,
+        -num_report_t1,
+        -num_report_t2
+      ),
+    by = "ELS_ID"
+  ) %>% 
+  left_join(
+    els_t1_early_6 %>% 
+      select(
+        ELS_ID,
+        sumsev_type_6:num_type_6
+      ),
+    by = "ELS_ID"
+  ) %>% 
+  left_join(
+    els_t1_early_7 %>% 
+      select(
+        ELS_ID,
+        sumsev_type_7:num_type_7
+      ),
+    by = "ELS_ID"
+  ) %>% 
+  mutate_at(
+    vars(-ELS_ID),
+    as.double
+  )
+```
+
+# Distributions and summaries 
+
+```{r}
+plot_histogram <- function(x) {
+    x = sym(x)
+  
+    ggplot(els_all_ratings, aes(!!x)) +
+    geom_histogram(binwidth = 1)
+}
+```
+
+```{r}
+rating_vars <- 
+  els_all_ratings %>% 
+  select(-ELS_ID) %>% 
+  names()
+
+histograms_ratings <- map(rating_vars, ~plot_histogram(.x))
+histograms_ratings
+```
+
+```{r}
+ratings_descriptives <- 
+  els_all_ratings %>% 
+  summarise_at(
+    vars(-ELS_ID),
+    funs(sum(!is.na(.)))
+  ) %>% 
+  gather(variable, n) %>% 
+  left_join(
+    els_all_ratings %>% 
+      summarise_at(
+        vars(-ELS_ID),
+        funs(mean),
+        na.rm = TRUE
+      ) %>% 
+      gather(variable, mean),
+    by = "variable"
+  ) %>% 
+  left_join(
+    els_all_ratings %>% 
+      summarise_at(
+        vars(-ELS_ID),
+        funs(median),
+        na.rm = TRUE
+      ) %>% 
+      gather(variable, median),
+    by = "variable"
+  ) %>% 
+  left_join(
+    els_all_ratings %>% 
+      summarise_at(
+        vars(-ELS_ID),
+        funs(sd),
+        na.rm = TRUE
+      ) %>% 
+      gather(variable, sd),
+    by = "variable"
+  ) %>% 
+  left_join( 
+    els_all_ratings %>% 
+      summarise_at(
+        vars(-ELS_ID),
+        funs(min),
+        na.rm = TRUE
+      ) %>% 
+      gather(variable, min),
+    by = "variable"
+  ) %>% 
+  left_join( 
+    els_all_ratings %>% 
+      summarise_at(
+        vars(-ELS_ID),
+        funs(max),
+        na.rm = TRUE
+      ) %>% 
+      gather(variable, max),
+    by = "variable"
+  ) 
+
+knitr::kable(ratings_descriptives, digits = 2)
+```
+
+# Frequencies of types
+
+## T1
+```{r}
+els_t1_types <-
+  els_t1_wf %>% 
+  select(
+    ELS_ID,
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  mutate_at(
+    vars(-ELS_ID),
+    funs(as.integer(!is.na(.)))
+  ) %>% 
+  rename_at(
+    vars(-ELS_ID),
+    funs(str_replace(., "_panel_objective_decision_re", "_t1"))
+  )
+```
+
+```{r}
+els_t1_frequency_table <- 
+  els_t1_types %>% 
+  gather(type, endorsed, -ELS_ID) %>% 
+  count(type, endorsed) %>% 
+  group_by(type) %>% 
+  mutate(
+    percent = round(((n / sum(n)) * 100), 0)
+  ) %>% 
+  filter(endorsed == 1) %>% 
+  arrange(desc(percent)) %>% 
+  select(-endorsed)
+
+knitr::kable(els_t1_frequency_table)
+```
+
+## T2
+```{r}
+els_t2_types <-
+  els_t2_wf %>% 
+  select(
+    ELS_ID,
+    ends_with("panel_objective_decision_re")
+  ) %>% 
+  mutate_at(
+    vars(-ELS_ID),
+    funs(as.integer(!is.na(.)))
+  ) %>% 
+  rename_at(
+    vars(-ELS_ID),
+    funs(str_replace(., "_panel_objective_decision_re", "_t2"))
+  )
+```
+
+```{r}
+els_t2_frequency_table <- 
+  els_t2_types %>% 
+  gather(type, endorsed, -ELS_ID) %>% 
+  count(type, endorsed) %>% 
+  group_by(type) %>% 
+  mutate(
+    percent = round(((n / sum(n)) * 100), 0)
+  ) %>% 
+  filter(endorsed == 1) %>% 
+  arrange(desc(percent)) %>% 
+  select(-endorsed)
+
+knitr::kable(els_t2_frequency_table)
+```
+
+## Join types with ratings file
+```{r}
+els_all_ratings <-
+  els_all_ratings %>% 
+  left_join(els_t1_types, by = "ELS_ID") %>% 
+  left_join(els_t2_types, by = "ELS_ID") %>% 
+  distinct(ELS_ID, sumsev_type_t1, .keep_all = TRUE) %>% 
+  left_join(
+    read_csv(lca_class_t1_file) %>% 
+      mutate(
+        class = case_when(
+          class == 1 ~ "direct_victim",
+          class == 2 ~ "family_instab",
+          class == 3 ~ "typical_low"
+        )
+      ),
+    by = "ELS_ID"
+  )
+```
+
+```{r}
+#write_csv(els_all_ratings, "~/Desktop/ELS/stress_data/els_severity_scores_20190217.csv")
+```
+

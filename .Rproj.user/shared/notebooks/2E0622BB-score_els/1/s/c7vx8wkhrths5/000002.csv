@@ -1,0 +1,4 @@
+"0","els_t1t2 <-"
+"0","  els_t1t2_obj %>% "
+"0","  left_join(els_t1t2_subj, by = ""ELS_ID"") %>% "
+"0","  distinct(ELS_ID, sumsev_type_t1t2, .keep_all = TRUE)"
