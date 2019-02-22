@@ -1,3 +1,0 @@
-"0","els_t1_wf <-"
-"0","  els_t1_obj %>% "
-"0","  left_join(els_t1_subj, by = ""ELS_ID"")"

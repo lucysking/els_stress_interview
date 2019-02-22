@@ -289,6 +289,50 @@ els_t1_wf <-
   left_join(els_t1_subj, by = "ELS_ID")
 ```
 
+### T1 Threat
+The below generates a measure of threat using the definition provided by Sheridan & McLaughlin (2014):
+
+"
+Threat
+Experiences of threat involve the presence of an atypical (i.e., unexpected) experience characterized by actual or threatened death, injury, sexual violation, or other harm to one’s physical integrity. Our definition of threat is consistent with the definition of a traumatic event in the Diagnostic and Statistical Manual of Mental Disorders 
+
+In the ELS study, the semi-structered "ELS Interview" is a modified version of the TESI-C. The majority of the items on this interview could be viewed as "threat." However, some items more clearly align with the definition of Sheridan & McLaughlin (e.g., domestic violence) while others are less clear (e.g., witnessing an accident) because of variation in the severity of experiences reported in certain categories. Therefore, we decided to be conservative and include items that are clearly threatening because they involve interpersonal harmful input to either child, someone close to the child, or the child's community.
+
+
+```{r}
+threat_vars_t1 <-
+  els_t1_wf %>% 
+  select(
+    comm_arg_panel_objective_decision_re,
+    comm_inst_panel_objective_decision_re,
+    comm_phys_panel_objective_decision_re,
+    bully_panel_objective_decision_re,
+    thrt_domvio_panel_objective_decision_re,
+    thrt_phys_ab_panel_objective_decision_re,
+    kidnap_panel_objective_decision_re,
+    parent_arg_panel_objective_decision_re,
+    dom_viol_panel_objective_decision_re,
+    war_terr_panel_objective_decision_re,
+    emo_ab_panel_objective_decision_re,
+    phys_ab_panel_objective_decision_re,
+    sex_ab_panel_objective_decision_re,
+    wit_sexab_panel_objective_decision_re, 
+    mug_rob_panel_objective_decision_re
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t1_wf <-
+  els_t1_wf %>% 
+  mutate(
+    sumsev_threat_t1 = pmap_dbl(
+      select(., threat_vars_t1),
+      function(...) sum(c(...), na.rm = TRUE)
+    )
+  )
+```
+
 # Calculate severity scores T2: Events occuring between T1 and T2
 ```{r}
 els_t2_obj <- 
@@ -357,6 +401,37 @@ els_t2_wf <-
   left_join(els_t2_subj, by = "ELS_ID")
 ```
 
+### T2 Threat
+
+```{r}
+threat_vars_t2 <-
+  els_t1_wf %>% 
+  select(
+    comm_arg_panel_objective_decision_re,
+    comm_inst_panel_objective_decision_re,
+    comm_phys_panel_objective_decision_re,
+    bully_panel_objective_decision_re,
+    thrt_domvio_panel_objective_decision_re,
+    thrt_phys_ab_panel_objective_decision_re,
+    parent_arg_panel_objective_decision_re,
+    dom_viol_panel_objective_decision_re,
+    war_terr_panel_objective_decision_re,
+    emo_ab_panel_objective_decision_re, 
+    mug_rob_panel_objective_decision_re
+  ) %>% 
+  names()
+```
+
+```{r}
+els_t2_wf <-
+  els_t2_wf %>% 
+  mutate(
+    sumsev_threat_t2 = pmap_dbl(
+      select(., threat_vars_t2),
+      function(...) sum(c(...), na.rm = TRUE)
+    )
+  )
+```
 # Calculate severity scores T1 and T2: Lifetime up to T2
 
 Important: If someone did not come in for T2 their "t1t2" scores are simply their t1 scores.
@@ -492,6 +567,18 @@ els_t1t2 <-
   distinct(ELS_ID, sumsev_type_t1t2, .keep_all = TRUE)
 ```
 
+### T1 and T2 Threat
+
+```{r}
+els_t1t2 <-
+  els_t1t2 %>% 
+  mutate(
+    sumsev_threat_t1t2 = pmap_dbl(
+      select(., threat_vars_t1),
+      function(...) sum(c(...), na.rm = TRUE)
+    )
+  )
+```
 # Stress by development stage
 
 ## Calculate sumsev_type T1: Onset age < 6
@@ -778,14 +865,16 @@ els_all_ratings <-
   select(
     ELS_ID,
     sumsev_type_t1:num_report_t1,
-    sumsub_type_t1:sss_t1
+    sumsub_type_t1:sss_t1,
+    sumsev_threat_t1
   ) %>% 
   left_join(
     els_t2_wf %>% 
       select(
         ELS_ID,
         sumsev_type_t2:num_report_t2,
-        sumsub_type_t2:sss_t2
+        sumsub_type_t2:sss_t2,
+        sumsev_threat_t2
       ),
     by = "ELS_ID"
   ) %>% 
@@ -796,6 +885,7 @@ els_all_ratings <-
         ELS_ID,
         sumsev_type_t1t2:num_report_t1t2,
         sumsub_type_t1t2:sss_t1t2,
+        sumsev_threat_t1t2,
         -num_report_t1,
         -num_report_t2
       ),
@@ -994,9 +1084,11 @@ els_all_ratings <-
       ),
     by = "ELS_ID"
   )
+
+
 ```
 
 ```{r}
-#write_csv(els_all_ratings, "~/Desktop/ELS/stress_data/els_severity_scores_20190217.csv")
+write_csv(els_all_ratings, "~/Desktop/ELS/stress_data/els_severity_scores_20190221.csv")
 ```
 
