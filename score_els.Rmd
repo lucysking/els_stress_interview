@@ -907,6 +907,14 @@ els_all_ratings <-
       ),
     by = "ELS_ID"
   ) %>% 
+  left_join(
+    els_t1t2_7 %>% 
+      select(
+        ELS_ID,
+        sumsev_type_7_t1t2:num_type_7_t1t2
+      ),
+    by = "ELS_ID"
+  ) %>% 
   mutate_at(
     vars(-ELS_ID),
     as.double
@@ -1089,6 +1097,6 @@ els_all_ratings <-
 ```
 
 ```{r}
-write_csv(els_all_ratings, "~/Desktop/ELS/stress_data/els_severity_scores_20190221.csv")
+write_csv(els_all_ratings, "~/Desktop/ELS/stress_data/els_severity_scores_20190626.csv")
 ```
 
