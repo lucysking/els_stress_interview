@@ -1,5 +1,5 @@
 # els_stress_interview
-The scripts in the repository are for wrangling and scoring of child/adolescent stress interviews for The Stanford Neurodevelopment, Affect, and Psychopathology (SNAP)lab study of the consequences of early life stress (ELS) for psychobiological development over the pubertal transition.
+The scripts in the repository are those created by Lucy King for wrangling and scoring the child/adolescent stress interviews collected by The Stanford Neurodevelopment, Affect, and Psychopathology (SNAP)lab study of the consequences of early life stress (ELS) for psychobiological development over the pubertal transition.
 
 As described in King et al. (2017, 2019, 2020), the SNAP Lab recruited 218 early adolescents ages 9-13 and their parents from the community to participate in a longitudinal study of the psychobiological effects of ELS across the transition through puberty. Following recruitment, 4  participants were excluded from the 
 final sample (2 withdrew, 1 had a medical illness, and 1 did not respond after initial contact). At time 1 (T1) and at time 2 (T2; approximately 2 years later), 
